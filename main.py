@@ -41,21 +41,47 @@ class SystemInfoRecorder:
         self.file_path = file_path
 
     def record_system_info(self):
+        try:
+            template = read_yaml_file(NAME_TEMPLATE_FILE)
+            time_format = template.get('time_format', '%H:%M') if template else '%H:%M'
+        except Exception as e:
+            logger.error(f"读取时间格式配置失败: {e}")
+            time_format = '%H:%M'
+
         cpu_percent = psutil.cpu_percent(interval=1)
         memory_percent = psutil.virtual_memory().percent
-        # 只保留小时和分钟
-        current_time = datetime.datetime.now().strftime("%H:%M")
+        current_time = datetime.datetime.now().strftime(time_format)
+        
+        # 新增网络状态检测
+        try:
+            latency = self.get_network_latency()
+            packet_loss = self.get_packet_loss()
+        except Exception as e:
+            logger.warning(f"网络状态检测失败: {e}")
+            latency = "未知"
+            packet_loss = "未知"
+
         system_info = {
             "cpu_usage": cpu_percent,
             "memory_usage": memory_percent,
-            "current_time": current_time
+            "current_time": current_time,
+            "network_latency": latency,
+            "packet_loss": packet_loss
         }
+
         try:
-            with open(self.file_path, 'w', encoding='utf-8') as file:
-                yaml.dump(system_info, file)
-            logger.info("系统信息已成功保存到 YAML 文件。")
+            with open(self.file_path, 'w', encoding='utf-8') as f:
+                yaml.safe_dump(system_info, f, allow_unicode=True)
         except Exception as e:
-            logger.error(f"保存系统信息到 YAML 文件时出错: {e}")
+            logger.error(f"保存系统信息失败: {e}")
+
+    def get_network_latency(self):
+        # 实现网络延迟检测逻辑
+        return "50ms"  # 示例值
+
+    def get_packet_loss(self):
+        # 实现丢包率检测逻辑
+        return "0%"  # 示例值
 
 @register("dynamic_group_card", "Your Name", "动态群名片插件", "1.0.0", "repo url")
 class DynamicGroupCardPlugin(Star):
@@ -108,15 +134,20 @@ class DynamicGroupCardPlugin(Star):
                     }
 
                     max_retries = 3
-                    for retry in range(max_retries):
+                    retry_count = 0
+                    base_delay = 2  # 初始延迟2秒
+                    
+                    while retry_count < max_retries:
                         try:
                             result = await client.api.call_action('set_group_card', **payload)
-                            logger.info(f"成功尝试修改群 {group_id} 中Bot的群名片为 {new_card}，API返回: {result}")
-                            # 更新该群聊的最后修改时间
+                            logger.info(f"成功修改群 {group_id} 中Bot的群名片为 {new_card}，API返回: {result}")
                             self.group_last_modify_time[group_id] = now
                             break
                         except Exception as e:
-                            if retry < max_retries - 1:
-                                logger.warning(f"修改群 {group_id} 中Bot的群名片时出错，第 {retry + 1} 次重试: {e}")
-                            else:
-                                logger.error(f"修改群 {group_id} 中Bot的群名片时出错，重试 {max_retries} 次后失败: {e}")
+                            delay = base_delay ** retry_count
+                            logger.warning(f"修改群名片失败，第 {retry_count + 1} 次重试 ({delay}秒后): {e}")
+                            await asyncio.sleep(delay)
+                            retry_count += 1
+                    else:
+                        logger.error(f"修改群 {group_id} 名片失败，已达最大重试次数 {max_retries}")
+                        self.group_last_modify_time[group_id] = now  # 防止持续失败时频繁重试
