@@ -121,9 +121,9 @@ class DynamicGroupCardPlugin(Star):
 
                     template = read_yaml_file(NAME_TEMPLATE_FILE)
                     if template is None:
-                        card_format = "neko0v0-脑容量{memory_usage}%-{current_time}"
+                        card_format = "Neko - {current_time}"
                     else:
-                        card_format = template.get('card_format', "neko0v0-脑容量{memory_usage}%-{current_time}")
+                        card_format = template.get('card_format', "Neko0v0-脑容量{memory_usage}%-{current_time}")
 
                     new_card = card_format.format(cpu_usage=cpu_usage, memory_usage=memory_usage, current_time=current_time)
 
